@@ -1,0 +1,7 @@
+# Version: 2026-11-18
+.tools/
+build/
+keystore/
+*.p12
+*.jks
+__pycache__/
