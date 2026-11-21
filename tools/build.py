@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds Screenshot-Marker's APK with nothing but a JDK and Python. Version: 2026-11-18
+"""Builds Screenshot-Marker's APK with nothing but a JDK and Python. Version: 2026-11-22
 
 No Android SDK and no Gradle: the build fetches three jars from public repositories (checked by
 SHA-256), compiles the Java sources against android.jar, turns them into classes.dex with dx,
@@ -25,6 +25,7 @@ import zipfile
 from pathlib import Path
 
 # ---- the one place for the version ------------------------------------------------------------
+# VERSION_NAME is X.Y.Z from 1.2.0 on: the app store knows only such versions, and the tag vX.Y.Z must match.
 VERSION_CODE = 2
 VERSION_NAME = "1.1"
 

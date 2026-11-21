@@ -1,9 +1,9 @@
-<!-- Version: 2026-11-18 -->
+<!-- Version: 2026-11-22 -->
 # Screenshot-Marker
 
 Eine kleine Android-App, um auf Screenshots zu malen: markieren, anstreichen, Pfeile, Rahmen und Kreise in mehreren Farben, dazu ein Radierer. Gedacht für schnelle Hinweise auf einem Bild, zum Beispiel vier Wortgruppen in einem Rätsel in vier Farben markieren.
 
-Die Seite für Besucher steht auf [kuehnert.online/screenshot-marker](https://kuehnert.online/screenshot-marker/), dort gibt es auch die APK.
+Die Seite für Besucher steht auf [kuehnert.online/screenshot-marker](https://kuehnert.online/screenshot-marker/). Die APK kommt aus dem gemeinsamen App-Store `store.kuehnert.online/screenshot-marker` (Repo `kuehnert/kuehnert-appstore`); die Seite liest Version, Größe und Prüfsumme von dort.
 
 ## Was sie kann
 
@@ -31,6 +31,7 @@ Die App merkt sich Werkzeug, Farbe, eigene Farben, Strichstärke und Radierer-Ei
 | `app/res/icon.png` | Das App-Symbol |
 | `tools/build.py` | Der Build, siehe unten. Hier stehen auch Versionsnummer und Manifest |
 | `tools/Sign.java`, `tools/Verify.java` | Signieren und Prüfen mit apksig |
+| `.github/workflows/apk.yml` | Baut bei einem Tag `vX.Y.Z` die signierte APK und veröffentlicht sie im App-Store |
 
 Kein Android Studio, kein Gradle, keine Bibliotheken: nur das Android-Framework. Die Oberfläche ist im Code gebaut, nicht in Layout-Dateien.
 
@@ -60,9 +61,26 @@ Ein Update installiert sich nur über eine vorhandene App, wenn es mit **demselb
 
 ### Neue Version
 
-1. In `tools/build.py` `VERSION_CODE` um eins erhöhen und `VERSION_NAME` setzen.
-2. `python tools/build.py`
-3. Die APK auf die Website bringen: siehe `screenshot-marker/` im Repo `kuehnert.online`.
+1. In `tools/build.py` `VERSION_CODE` um eins erhöhen und `VERSION_NAME` setzen, immer dreistellig (`1.2.0`): der App-Store kennt nur solche Versionen.
+2. Committen, pushen und das Tag setzen: `git tag v1.2.0 && git push origin v1.2.0`.
+3. `.github/workflows/apk.yml` baut die signierte APK und veröffentlicht sie im App-Store. Die Seite auf kuehnert.online zeigt sie von selbst an, dort ist nichts zu tun.
+
+Einmalig auf GitHub als Secrets hinterlegen:
+
+```bash
+base64 -w0 keystore/screenshot-marker.p12 | gh secret set SCREENSHOT_MARKER_KEYSTORE_BASE64 -R kuehnert/ScreenshotMarker
+gh secret set SCREENSHOT_MARKER_KEYSTORE_PASSWORD -R kuehnert/ScreenshotMarker < keystore/password.txt
+gh secret set APPSTORE_TOKEN -R kuehnert/ScreenshotMarker
+```
+
+`APPSTORE_TOKEN` ist der Upload-Schlüssel für das Programm `screenshot-marker` von der Admin-Seite des App-Stores.
+
+Von Hand geht es auch: `python tools/build.py`, dann mit `APPSTORE_TOKEN` in der Umgebung
+
+```bash
+curl -fsSL https://store.kuehnert.online/publish.mjs -o publish.mjs
+node publish.mjs publish --app screenshot-marker --version 1.2.0 --file apk:android:build/ScreenshotMarker-1.2.0.apk
+```
 
 ## Versionen
 
