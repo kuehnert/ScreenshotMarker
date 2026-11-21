@@ -1,0 +1,81 @@
+name: APK bauen und veröffentlichen
+
+# Version: 2026-11-22
+# Ein Git-Tag vX.Y.Z baut die signierte APK, hängt sie als Artefakt an und veröffentlicht sie im
+# App-Store store.kuehnert.online (Repo kuehnert/kuehnert-appstore), aus dem kuehnert.online/screenshot-marker
+# den Download anbietet. Von Hand gestartet (Run workflow) baut er nur.
+#
+# Secrets:
+#   SCREENSHOT_MARKER_KEYSTORE_BASE64    keystore/screenshot-marker.p12 als Base64 (base64 -w0 …)
+#   SCREENSHOT_MARKER_KEYSTORE_PASSWORD  sein Passwort (keystore/password.txt)
+#   APPSTORE_TOKEN                       Upload-Schlüssel für „screenshot-marker“ von der Admin-Seite des App-Stores
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.SCREENSHOT_MARKER_KEYSTORE_BASE64 }}
+      SCREENSHOT_MARKER_KEYSTORE_PASSWORD: ${{ secrets.SCREENSHOT_MARKER_KEYSTORE_PASSWORD }}
+      APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Version lesen und prüfen
+        run: |
+          version="$(sed -n 's/^VERSION_NAME = "\(.*\)"/\1/p' tools/build.py)"
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::VERSION_NAME in tools/build.py muss X.Y.Z sein (der App-Store kennt nur solche Versionen), nicht $version."
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zu VERSION_NAME $version in tools/build.py."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Signaturschlüssel bereitstellen
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$SCREENSHOT_MARKER_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Secrets SCREENSHOT_MARKER_KEYSTORE_BASE64 oder SCREENSHOT_MARKER_KEYSTORE_PASSWORD fehlen. Mit einem anderen Schlüssel ließe sich die APK nicht als Update installieren."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/screenshot-marker.p12"
+          echo "SCREENSHOT_MARKER_KEYSTORE=$RUNNER_TEMP/screenshot-marker.p12" >> "$GITHUB_ENV"
+
+      - name: APK bauen
+        run: python tools/build.py
+
+      - name: APK als Artefakt aufheben
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenshotMarker-apk
+          path: build/ScreenshotMarker-*.apk
+          retention-days: 14
+
+      - name: Im App-Store veröffentlichen
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          if [ -z "$APPSTORE_TOKEN" ]; then
+            echo "::error::Secret APPSTORE_TOKEN fehlt – APK gebaut, aber nicht veröffentlicht."
+            exit 1
+          fi
+          curl -fsSL https://store.kuehnert.online/publish.mjs -o "$RUNNER_TEMP/publish.mjs"
+          node "$RUNNER_TEMP/publish.mjs" publish --app screenshot-marker --version "$VERSION" \
+            --file "apk:android:build/ScreenshotMarker-$VERSION.apk"
