@@ -70,6 +70,22 @@ public class DrawView extends View {
     private byte[] lum;                 // luminance of the picture, for line detection
     private int lumW, lumH;
     private final Paint cropPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    // block detection, on a copy shrunk by `ff` for very large pictures
+    private BlockFinder finder;
+    private float ff = 1f;
+    boolean gapMode = false;            // a tap or a vertical drag removes a horizontal gap
+    private float gapFrom = Float.NaN, gapTo = Float.NaN;
+    private boolean moved;
+    private float downX, downY;
+    private BlockFinder.Block lastBlock; // the block the last tap found; a tap near it grows it
+    private float lastTapX = -1, lastTapY = -1;
+    private int cropMark;               // history size when cropping began: "Abbrechen" goes back to it
+
+    interface Messages { void show(String text); }
+    private Messages messages;
+    void setMessages(Messages m) { messages = m; }
+    private void say(String text) { if (messages != null) messages.show(text); }
     private Shape current;
     private boolean erasing = false, erasedSomething = false;
     private float cursorX, cursorY;
@@ -117,13 +133,19 @@ public class DrawView extends View {
     private void snapshot() { history.add(new State(base, new ArrayList<>(shapes))); }
 
     void undo() {
-        if (history.isEmpty() || cropping) return;
+        if (history.isEmpty()) return;
         State s = history.remove(history.size() - 1);
+        if (cropMark > history.size()) cropMark = history.size();
         boolean newPicture = s.base != base;
         base = s.base;
         shapes = s.shapes;
         if (newPicture) baseShader = new BitmapShader(base, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
         rebuild();
+        if (cropping) {
+            crop.set(0, 0, base.getWidth(), base.getHeight());
+            snappedEdges = 0;
+            if (newPicture) analyze();
+        }
         if (newPicture) resetView();
         changed();
     }
@@ -394,17 +416,29 @@ public class DrawView extends View {
     void startCrop() {
         if (base == null || cropping) return;
         cropping = true;
+        gapMode = false;
+        cropMark = history.size();
         current = null;
         crop.set(0, 0, base.getWidth(), base.getHeight());
         snappedEdges = 0;
-        computeLuminance();
+        analyze();
         resetView();
         notifyUi();
     }
 
     void cancelCrop() {
         if (!cropping) return;
+        if (history.size() > cropMark) { // take back the gaps cut out while cropping
+            State st = history.get(cropMark);
+            while (history.size() > cropMark) history.remove(history.size() - 1);
+            base = st.base;
+            shapes = st.shapes;
+            baseShader = new BitmapShader(base, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+            rebuild();
+            version++;
+        }
         cropping = false;
+        gapMode = false;
         lum = null;
         resetView();
         notifyUi();
@@ -437,46 +471,120 @@ public class DrawView extends View {
         }
         shapes = moved;
         cropping = false;
+        gapMode = false;
         lum = null;
+        finder = null;
         rebuild();
         resetView();
         changed();
     }
 
-    /** Frames the picture without its plain-coloured margins. Returns false when there are none. */
-    boolean autoCrop() {
+    /** Luminance for snapping, and the content map for finding blocks. */
+    private void analyze() {
+        computeLuminance();
         int w = base.getWidth(), h = base.getHeight();
-        int t = 0, b = h, l = 0, r = w;
-        int ref = base.getPixel(w / 2, 0);
-        while (t < h - 16 && uniformRow(t, ref)) t++;
-        ref = base.getPixel(w / 2, h - 1);
-        while (b > t + 16 && uniformRow(b - 1, ref)) b--;
-        ref = base.getPixel(0, h / 2);
-        while (l < w - 16 && uniformCol(l, ref, t, b)) l++;
-        ref = base.getPixel(w - 1, h / 2);
-        while (r > l + 16 && uniformCol(r - 1, ref, t, b)) r--;
-        if (t == 0 && b == h && l == 0 && r == w) return false;
-        crop.set(l, t, r, b);
+        int f = (int) Math.ceil(Math.sqrt(w * (double) h / 4_000_000.0));
+        Bitmap src = f > 1 ? Bitmap.createScaledBitmap(base, Math.max(1, w / f), Math.max(1, h / f), true) : base;
+        ff = f > 1 ? (float) w / src.getWidth() : 1f;
+        int[] px = new int[src.getWidth() * src.getHeight()];
+        src.getPixels(px, 0, src.getWidth(), 0, 0, src.getWidth(), src.getHeight());
+        finder = new BlockFinder(px, src.getWidth(), src.getHeight());
+        lastBlock = null;
+    }
+
+    private int marginPx() { return Math.max(4, Math.round(Math.min(base.getWidth(), base.getHeight()) * 0.015f)); }
+
+    /** Sets the frame to a rectangle of content (pixels of the analysed copy) plus a narrow margin, and lights it up. */
+    private void frameContent(int[] r) {
+        int m = marginPx(), w = base.getWidth(), h = base.getHeight();
+        crop.set(Math.max(0, r[0] * ff - m), Math.max(0, r[1] * ff - m), Math.min(w, r[2] * ff + m), Math.min(h, r[3] * ff + m));
+        snappedEdges = C_L | C_T | C_R | C_B;
+        performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        invalidate();
+    }
+
+    /**
+     * A tap on content frames the block under the finger: the area that empty space separates from the
+     * rest. Another tap at the same spot grows to the next larger block (a tile, then the board).
+     */
+    private void tapSelect(float vx, float vy) {
+        PointF p = toImage(vx, vy);
+        float dens = getResources().getDisplayMetrics().density;
+        boolean again = lastBlock != null && Math.hypot(vx - lastTapX, vy - lastTapY) < 32 * dens;
+        lastTapX = vx;
+        lastTapY = vy;
+        BlockFinder.Block b = again ? lastBlock.next() : finder.blockAt(p.x / ff, p.y / ff, 14 * dens / scaleOf(m) / ff);
+        if (b == null) {
+            say(again ? "Größer geht es nicht" : "Hier ist nichts – tippe auf den Inhalt, den du ausschneiden willst");
+            return;
+        }
+        lastBlock = b;
+        frameContent(b.rect());
+    }
+
+    /** Pulls the frame in to the content inside it, with a narrow margin. */
+    void tighten() {
+        int[] r = finder.tighten(crop.left / ff, crop.top / ff, crop.right / ff, crop.bottom / ff);
+        if (r == null) { say("Im Rahmen ist kein Inhalt"); return; }
+        lastBlock = null;
+        frameContent(r);
+    }
+
+    /** Makes the frame square around its centre, as large as its longer side (as far as the picture allows). */
+    void square() {
+        float side = Math.min(Math.max(crop.width(), crop.height()), Math.min(base.getWidth(), base.getHeight()));
+        float l = clamp(crop.centerX() - side / 2, 0, base.getWidth() - side);
+        float t = clamp(crop.centerY() - side / 2, 0, base.getHeight() - side);
+        crop.set(l, t, l + side, t + side);
         snappedEdges = 0;
         invalidate();
-        return true;
     }
 
-    private static boolean close(int a, int b) {
-        return Math.abs(((a >> 16) & 255) - ((b >> 16) & 255)) <= 16 && Math.abs(((a >> 8) & 255) - ((b >> 8) & 255)) <= 16
-                && Math.abs((a & 255) - (b & 255)) <= 16;
+    void setGapMode(boolean on) {
+        gapMode = on;
+        gapFrom = gapTo = Float.NaN;
+        invalidate();
     }
 
-    private boolean uniformRow(int y, int ref) {
-        int w = base.getWidth(), step = Math.max(1, w / 300), n = 0, ok = 0;
-        for (int x = 0; x < w; x += step) { n++; if (close(base.getPixel(x, y), ref)) ok++; }
-        return ok >= n * 0.98f;
+    /** The empty rows around y inside the frame's width, leaving one margin of space; null if y is not in a gap. */
+    private int[] gapAround(float yImg) {
+        int[] g = finder.gapAround(yImg / ff, crop.left / ff, crop.right / ff, Math.max(1, Math.round(marginPx() / ff)));
+        return g == null ? null : new int[]{Math.round(g[0] * ff), Math.round(g[1] * ff)};
     }
 
-    private boolean uniformCol(int x, int ref, int y0, int y1) {
-        int step = Math.max(1, (y1 - y0) / 300), n = 0, ok = 0;
-        for (int y = y0; y < y1; y += step) { n++; if (close(base.getPixel(x, y), ref)) ok++; }
-        return ok >= n * 0.98f;
+    /** Cuts the rows [t, b) out of the picture: what is below moves up. Shapes and the frame move along. */
+    private void removeRows(int t, int b) {
+        int w = base.getWidth(), h = base.getHeight();
+        t = clampInt(t, 0, h);
+        b = clampInt(b, t, h);
+        int cut = b - t;
+        if (cut < 2 || cut >= h - 8) return;
+        snapshot();
+        Bitmap next = Bitmap.createBitmap(w, h - cut, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(next);
+        c.drawBitmap(base, new android.graphics.Rect(0, 0, w, t), new android.graphics.Rect(0, 0, w, t), null);
+        c.drawBitmap(base, new android.graphics.Rect(0, b, w, h), new android.graphics.Rect(0, t, w, h - cut), null);
+        base = next;
+        baseShader = new BitmapShader(base, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+        ArrayList<Shape> moved = new ArrayList<>();
+        for (Shape s : shapes) {
+            Shape n = new Shape();
+            n.tool = s.tool;
+            n.color = s.color;
+            n.w = s.w;
+            for (PointF q : s.pts) n.pts.add(new PointF(q.x, q.y >= b ? q.y - cut : Math.min(q.y, t)));
+            moved.add(n);
+        }
+        shapes = moved;
+        float ct = crop.top >= b ? crop.top - cut : Math.min(crop.top, t);
+        float cb = crop.bottom >= b ? crop.bottom - cut : Math.min(crop.bottom, t);
+        if (cb - ct < 16) { ct = 0; cb = h - cut; }
+        crop.set(crop.left, ct, crop.right, cb);
+        snappedEdges = 0;
+        rebuild();
+        analyze();
+        resetView();
+        changed();
     }
 
     private void computeLuminance() {
@@ -544,11 +652,19 @@ public class DrawView extends View {
 
     private boolean cropTouch(MotionEvent e) {
         float d = getResources().getDisplayMetrics().density;
+        float slop = 8 * d;
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN: {
+                downX = e.getX();
+                downY = e.getY();
+                moved = false;
+                if (gapMode) {
+                    gapFrom = gapTo = toImage(downX, downY).y;
+                    return true;
+                }
                 RectF vr = new RectF();
                 m.mapRect(vr, crop);
-                float x = e.getX(), y = e.getY(), grab = 28 * d;
+                float x = downX, y = downY, grab = 28 * d;
                 int flags = 0;
                 boolean nearL = Math.abs(x - vr.left) < grab, nearR = Math.abs(x - vr.right) < grab;
                 boolean nearT = Math.abs(y - vr.top) < grab, nearB = Math.abs(y - vr.bottom) < grab;
@@ -563,16 +679,42 @@ public class DrawView extends View {
                 return true;
             }
             case MotionEvent.ACTION_MOVE: {
-                if (cropDrag == 0 || e.getPointerCount() > 1) return true;
+                if (e.getPointerCount() > 1) return true;
+                if (!moved && Math.hypot(e.getX() - downX, e.getY() - downY) < slop) return true;
+                moved = true;
+                if (gapMode) {
+                    gapTo = clamp(toImage(e.getX(), e.getY()).y, 0, base.getHeight());
+                    invalidate();
+                    return true;
+                }
+                if (cropDrag == 0) return true;
                 float s = scaleOf(m);
-                float dx = (e.getX() - dragX) / s, dy = (e.getY() - dragY) / s;
-                dragCrop(dx, dy);
+                dragCrop((e.getX() - dragX) / s, (e.getY() - dragY) / s);
+                lastBlock = null;
                 invalidate();
                 return true;
             }
-            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_UP: {
+                if (gapMode) {
+                    if (!moved) {
+                        int[] g = gapAround(toImage(e.getX(), e.getY()).y);
+                        if (g == null) say("Hier ist keine Lücke – tippe in eine leere Fläche oder ziehe über den Streifen, der weg soll");
+                        else removeRows(g[0], g[1]);
+                    } else {
+                        removeRows(Math.round(Math.min(gapFrom, gapTo)), Math.round(Math.max(gapFrom, gapTo)));
+                    }
+                    gapFrom = gapTo = Float.NaN;
+                    invalidate();
+                    return true;
+                }
+                if (!moved && (cropDrag == C_MOVE || cropDrag == 0)) tapSelect(e.getX(), e.getY());
+                cropDrag = 0;
+                invalidate();
+                return true;
+            }
             case MotionEvent.ACTION_CANCEL:
                 cropDrag = 0;
+                gapFrom = gapTo = Float.NaN;
                 invalidate();
                 return true;
         }
@@ -663,6 +805,20 @@ public class DrawView extends View {
         p.moveTo(vr.right, cy - e); p.lineTo(vr.right, cy + e);
         c.drawPath(p, cropPaint);
         cropPaint.setStrokeCap(Paint.Cap.BUTT);
+
+        // the strip that a drag in gap mode will cut out
+        if (gapMode && !Float.isNaN(gapFrom) && moved) {
+            float[] ys = {0, Math.min(gapFrom, gapTo), 0, Math.max(gapFrom, gapTo)};
+            m.mapPoints(ys);
+            cropPaint.setStyle(Paint.Style.FILL);
+            cropPaint.setColor(0x88E03131);
+            c.drawRect(vr.left, ys[1], vr.right, ys[3], cropPaint);
+            cropPaint.setStyle(Paint.Style.STROKE);
+            cropPaint.setStrokeWidth(2 * d);
+            cropPaint.setColor(0xFFE03131);
+            c.drawLine(vr.left, ys[1], vr.right, ys[1], cropPaint);
+            c.drawLine(vr.left, ys[3], vr.right, ys[3], cropPaint);
+        }
 
         // size in pixels, above the frame (or inside it at the very top)
         String label = Math.round(crop.width()) + " × " + Math.round(crop.height());

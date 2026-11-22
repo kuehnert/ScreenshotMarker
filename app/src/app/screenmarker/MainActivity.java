@@ -59,7 +59,8 @@ public class MainActivity extends Activity {
     interface ColorCallback { void picked(int color, boolean auto); }
 
     DrawView draw;
-    IconButton undoBtn, clearBtn, shareBtn, saveBtn, openBtn, cropBtn, snapBtn;
+    IconButton undoBtn, clearBtn, shareBtn, saveBtn, openBtn, cropBtn, snapBtn, gapBtn;
+    android.widget.TextView cropHint;
     LinearLayout toolsPanel, cropPanel;
     final ArrayList<IconButton> toolBtns = new ArrayList<>();
     final ArrayList<IconButton> eraserBtns = new ArrayList<>();
@@ -197,17 +198,20 @@ public class MainActivity extends Activity {
         cropPanel.setOrientation(LinearLayout.VERTICAL);
         cropPanel.setBackgroundColor(BAR);
         cropPanel.setPadding(p, p * 2, p, p * 2);
-        android.widget.TextView cropHint = new android.widget.TextView(this);
-        cropHint.setText("Ecken und Kanten ziehen, oder den Rahmen verschieben");
+        cropHint = new android.widget.TextView(this);
         cropHint.setTextColor(MUTED);
         cropHint.setTextSize(13);
         cropHint.setGravity(Gravity.CENTER);
         cropPanel.addView(cropHint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout cropTools = new LinearLayout(this);
+        IconButton tightCrop = cropButton(cropTools, IconButton.I_TIGHT, "Eng");
+        IconButton squareCrop = cropButton(cropTools, IconButton.I_SQUARE, "Quadrat");
+        gapBtn = cropButton(cropTools, IconButton.I_GAP, "Lücke");
+        snapBtn = cropButton(cropTools, IconButton.I_MAGNET, "Einrasten");
+        cropPanel.addView(cropTools);
         LinearLayout cropRow = new LinearLayout(this);
         IconButton cancelCrop = cropButton(cropRow, IconButton.I_CLOSE, "Abbrechen");
         IconButton fullCrop = cropButton(cropRow, IconButton.I_FULL, "Alles");
-        IconButton autoCrop = cropButton(cropRow, IconButton.I_AUTO, "Auto");
-        snapBtn = cropButton(cropRow, IconButton.I_MAGNET, "Einrasten");
         IconButton applyCrop = cropButton(cropRow, IconButton.I_CHECK, "Fertig");
         applyCrop.setPrimary(true);
         cropPanel.addView(cropRow);
@@ -217,10 +221,13 @@ public class MainActivity extends Activity {
         cropBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.startCrop(); } });
         cancelCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.cancelCrop(); } });
         fullCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.resetCrop(); } });
-        autoCrop.setOnClickListener(new View.OnClickListener() {
-            public void onClick(View v) {
-                if (!draw.autoCrop()) Toast.makeText(MainActivity.this, "Keinen einfarbigen Rand gefunden", Toast.LENGTH_SHORT).show();
-            }
+        tightCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.tighten(); } });
+        squareCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.square(); } });
+        gapBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { draw.setGapMode(!draw.gapMode); updateButtons(); }
+        });
+        draw.setMessages(new DrawView.Messages() {
+            public void show(String text) { Toast.makeText(MainActivity.this, text, Toast.LENGTH_LONG).show(); }
         });
         snapBtn.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
@@ -409,13 +416,17 @@ public class MainActivity extends Activity {
         boolean has = draw.hasImage();
         boolean crop = draw.cropping;
         openBtn.setEnabled(!crop);
-        undoBtn.setEnabled(!crop && draw.canUndo());
+        undoBtn.setEnabled(draw.canUndo());
         clearBtn.setEnabled(!crop && draw.hasShapes());
         cropBtn.setEnabled(has && !crop);
         saveBtn.setEnabled(has && !busy && !crop);
         shareBtn.setEnabled(has && !busy && !crop);
         toolsPanel.setVisibility(crop ? View.GONE : View.VISIBLE);
         cropPanel.setVisibility(crop ? View.VISIBLE : View.GONE);
+        gapBtn.setSelectedState(draw.gapMode);
+        cropHint.setText(draw.gapMode
+                ? "In eine Lücke tippen oder über den Streifen ziehen: er wird herausgeschnitten"
+                : "Auf Inhalt tippen: Rahmen springt drumherum, nochmal tippen: größer");
     }
 
     IconButton cropButton(LinearLayout row, int icon, String label) {

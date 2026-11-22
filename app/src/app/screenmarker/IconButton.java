@@ -14,7 +14,8 @@ public class IconButton extends View {
     static final int I_OPEN = 0, I_UNDO = 1, I_TRASH = 2, I_SHARE = 3, I_SAVE = 4,
             I_MARKER = 5, I_PEN = 6, I_ARROW = 7, I_RECT = 8, I_CIRCLE = 9, I_ERASER = 10,
             I_E_OBJECTS = 11, I_E_PIXELS = 12, I_E_COVER = 13,
-            I_CROP = 14, I_CLOSE = 15, I_AUTO = 16, I_MAGNET = 17, I_FULL = 18, I_CHECK = 19;
+            I_CROP = 14, I_CLOSE = 15, I_AUTO = 16, I_MAGNET = 17, I_FULL = 18, I_CHECK = 19,
+            I_TIGHT = 20, I_SQUARE = 21, I_GAP = 22;
 
     private final int icon;
     private final String label;
@@ -82,7 +83,7 @@ public class IconButton extends View {
         }
     }
 
-    private boolean isToolIcon() { return (icon >= I_MARKER && icon <= I_E_COVER) || icon == I_MAGNET; }
+    private boolean isToolIcon() { return (icon >= I_MARKER && icon <= I_E_COVER) || icon == I_MAGNET || icon == I_GAP; }
 
     private void drawIcon(Canvas c) {
         Path p = new Path();
@@ -173,6 +174,22 @@ public class IconButton extends View {
                 p.moveTo(15, 4); p.lineTo(20, 4); p.lineTo(20, 9);
                 p.moveTo(20, 15); p.lineTo(20, 20); p.lineTo(15, 20);
                 p.moveTo(9, 20); p.lineTo(4, 20); p.lineTo(4, 15);
+                break;
+            case I_TIGHT: // a box with four arrows pointing in
+                c.drawRoundRect(new RectF(9, 9, 15, 15), 1, 1, stroke);
+                p.moveTo(3, 3); p.lineTo(7, 7); p.moveTo(7, 4); p.lineTo(7, 7); p.lineTo(4, 7);
+                p.moveTo(21, 3); p.lineTo(17, 7); p.moveTo(17, 4); p.lineTo(17, 7); p.lineTo(20, 7);
+                p.moveTo(3, 21); p.lineTo(7, 17); p.moveTo(7, 20); p.lineTo(7, 17); p.lineTo(4, 17);
+                p.moveTo(21, 21); p.lineTo(17, 17); p.moveTo(17, 20); p.lineTo(17, 17); p.lineTo(20, 17);
+                break;
+            case I_SQUARE:
+                c.drawRoundRect(new RectF(5, 5, 19, 19), 1.5f, 1.5f, stroke);
+                p.moveTo(9, 15); p.lineTo(15, 9);
+                break;
+            case I_GAP: // two blocks with the space between them closing
+                c.drawRoundRect(new RectF(4, 2, 20, 7), 1, 1, stroke);
+                c.drawRoundRect(new RectF(4, 17, 20, 22), 1, 1, stroke);
+                p.moveTo(12, 9); p.lineTo(12, 15); p.moveTo(9.5f, 12.5f); p.lineTo(12, 15); p.lineTo(14.5f, 12.5f);
                 break;
             case I_CHECK:
                 p.moveTo(5, 12.5f); p.lineTo(10, 17.5f); p.lineTo(19, 7);
