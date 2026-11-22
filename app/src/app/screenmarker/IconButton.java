@@ -1,4 +1,4 @@
-// Version: 2026-11-18
+// Version: 2026-11-22
 package app.screenmarker;
 
 import android.content.Context;
@@ -13,7 +13,8 @@ public class IconButton extends View {
 
     static final int I_OPEN = 0, I_UNDO = 1, I_TRASH = 2, I_SHARE = 3, I_SAVE = 4,
             I_MARKER = 5, I_PEN = 6, I_ARROW = 7, I_RECT = 8, I_CIRCLE = 9, I_ERASER = 10,
-            I_E_OBJECTS = 11, I_E_PIXELS = 12, I_E_COVER = 13;
+            I_E_OBJECTS = 11, I_E_PIXELS = 12, I_E_COVER = 13,
+            I_CROP = 14, I_CLOSE = 15, I_AUTO = 16, I_MAGNET = 17, I_FULL = 18, I_CHECK = 19;
 
     private final int icon;
     private final String label;
@@ -81,7 +82,7 @@ public class IconButton extends View {
         }
     }
 
-    private boolean isToolIcon() { return icon >= I_MARKER; }
+    private boolean isToolIcon() { return (icon >= I_MARKER && icon <= I_E_COVER) || icon == I_MAGNET; }
 
     private void drawIcon(Canvas c) {
         Path p = new Path();
@@ -144,6 +145,37 @@ public class IconButton extends View {
                 c.drawCircle(15.5f, 15.5f, 5.5f, stroke);
                 p.moveTo(13.5f, 13.5f); p.lineTo(17.5f, 17.5f);
                 p.moveTo(17.5f, 13.5f); p.lineTo(13.5f, 17.5f);
+                break;
+            case I_CROP:
+                p.moveTo(6, 2); p.lineTo(6, 18); p.lineTo(22, 18);
+                p.moveTo(2, 6); p.lineTo(18, 6); p.lineTo(18, 22);
+                break;
+            case I_CLOSE:
+                p.moveTo(6, 6); p.lineTo(18, 18);
+                p.moveTo(18, 6); p.lineTo(6, 18);
+                break;
+            case I_AUTO: // magic wand with sparkles
+                p.moveTo(4, 20); p.lineTo(15, 9);
+                p.moveTo(13, 7); p.lineTo(17, 11);
+                p.moveTo(18, 2); p.lineTo(18, 6); p.moveTo(16, 4); p.lineTo(20, 4);
+                p.moveTo(8, 3); p.lineTo(8, 6); p.moveTo(6.5f, 4.5f); p.lineTo(9.5f, 4.5f);
+                p.moveTo(20, 13); p.lineTo(20, 16); p.moveTo(18.5f, 14.5f); p.lineTo(21.5f, 14.5f);
+                break;
+            case I_MAGNET: // horseshoe magnet: snaps to lines
+                p.moveTo(6, 4); p.lineTo(6, 12);
+                p.arcTo(new RectF(6, 6, 18, 18), 180, -180, false);
+                p.lineTo(18, 4);
+                p.moveTo(4, 4); p.lineTo(9, 4); p.moveTo(15, 4); p.lineTo(20, 4);
+                p.moveTo(4, 8); p.lineTo(8, 8); p.moveTo(16, 8); p.lineTo(20, 8);
+                break;
+            case I_FULL:
+                p.moveTo(4, 9); p.lineTo(4, 4); p.lineTo(9, 4);
+                p.moveTo(15, 4); p.lineTo(20, 4); p.lineTo(20, 9);
+                p.moveTo(20, 15); p.lineTo(20, 20); p.lineTo(15, 20);
+                p.moveTo(9, 20); p.lineTo(4, 20); p.lineTo(4, 15);
+                break;
+            case I_CHECK:
+                p.moveTo(5, 12.5f); p.lineTo(10, 17.5f); p.lineTo(19, 7);
                 break;
             case I_E_COVER:
                 c.drawRoundRect(new RectF(4, 3, 18, 9), 1.5f, 1.5f, stroke);

@@ -14,8 +14,9 @@ Die Seite für Besucher steht auf [kuehnert.online/screenshot-marker](https://ku
 | Radierer | **Objekte**: ganze Striche und Formen löschen. **Radieren**: Markierungen pixelweise wegwischen, das Original kommt wieder zum Vorschein. **Übermalen**: im Bild selbst abdecken, mit der Farbe unter dem Finger oder einer festen Farbe |
 | Farben | Sechs Plätze, die ersten vier nummeriert. Lange drücken öffnet eine Farbauswahl |
 | Strichstärken | Drei Stufen, für Formen, Marker und Radierer je eigen abgestimmt |
+| Zuschneiden | Rahmen an Ecken und Kanten ziehen oder verschieben. **Einrasten**: Kanten springen an waagerechte und senkrechte Linien im Bild (Kartenränder, Trennlinien, Kacheln), gemessen nur im Bereich des Rahmens; eine eingerastete Kante leuchtet blau. **Auto** schneidet einfarbige Ränder ab. Rückgängig machbar, Gezeichnetes wandert mit |
 | Zoomen | Mit zwei Fingern vergrößern und verschieben, mit einem Finger zeichnen |
-| Zurück | Macht Striche, Radieren und „Alles löschen“ rückgängig |
+| Zurück | Macht Striche, Radieren, „Alles löschen“ und Zuschneiden rückgängig |
 | Speichern, Teilen | PNG in voller Auflösung unter *Bilder/Markiert*; Teilen speichert und öffnet das Teilen-Menü |
 
 Die App merkt sich Werkzeug, Farbe, eigene Farben, Strichstärke und Radierer-Einstellungen. Sie braucht keine Berechtigungen und kein Internet. Android 10 oder neuer.
@@ -25,7 +26,7 @@ Die App merkt sich Werkzeug, Farbe, eigene Farben, Strichstärke und Radierer-Ei
 | Pfad | Was |
 |---|---|
 | `app/src/app/screenmarker/MainActivity.java` | Leisten, Einstellungen, Laden, Speichern, Teilen, Farbdialog |
-| `app/src/app/screenmarker/DrawView.java` | Bild, Zeichnen, Radieren, Zoomen, Rückgängig. Alle Formen liegen in Bildpixeln und werden beim Speichern in voller Auflösung gezeichnet |
+| `app/src/app/screenmarker/DrawView.java` | Bild, Zeichnen, Radieren, Zuschneiden mit Linienerkennung, Zoomen, Rückgängig. Alle Formen liegen in Bildpixeln und werden beim Speichern in voller Auflösung gezeichnet |
 | `app/src/app/screenmarker/ColorPickerView.java` | Farbfläche und Farbtonleiste |
 | `app/src/app/screenmarker/IconButton.java`, `ColorDot.java` | Knöpfe mit selbst gezeichneten Symbolen, Farb- und Stärkepunkte |
 | `app/res/icon.png` | Das App-Symbol |
@@ -86,5 +87,6 @@ node publish.mjs publish --app screenshot-marker --version 1.2.0 --file apk:andr
 
 | Version | |
 |---|---|
+| 1.2.0 | Zuschneiden, mit Einrasten an Linien im Bild und automatischem Abschneiden einfarbiger Ränder |
 | 1.1 | Radierer mit drei Modi, Farben per langem Druck änderbar, deutlich dickere Strichstärken, Rückgängig auch für Radieren und Löschen |
 | 1.0 | Marker, Stift, Pfeil, Rahmen, Kreis in sechs Farben, Zoomen, Speichern und Teilen |

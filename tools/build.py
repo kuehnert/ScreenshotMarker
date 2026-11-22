@@ -26,8 +26,8 @@ from pathlib import Path
 
 # ---- the one place for the version ------------------------------------------------------------
 # VERSION_NAME is X.Y.Z from 1.2.0 on: the app store knows only such versions, and the tag vX.Y.Z must match.
-VERSION_CODE = 2
-VERSION_NAME = "1.1"
+VERSION_CODE = 3
+VERSION_NAME = "1.2.0"
 
 PKG = "app.screenmarker"
 APP_LABEL = "Screenshot-Marker"

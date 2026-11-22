@@ -1,4 +1,4 @@
-// Version: 2026-11-18
+// Version: 2026-11-22
 package app.screenmarker;
 
 import android.app.Activity;
@@ -59,7 +59,8 @@ public class MainActivity extends Activity {
     interface ColorCallback { void picked(int color, boolean auto); }
 
     DrawView draw;
-    IconButton undoBtn, clearBtn, shareBtn, saveBtn;
+    IconButton undoBtn, clearBtn, shareBtn, saveBtn, openBtn, cropBtn, snapBtn;
+    LinearLayout toolsPanel, cropPanel;
     final ArrayList<IconButton> toolBtns = new ArrayList<>();
     final ArrayList<IconButton> eraserBtns = new ArrayList<>();
     final ArrayList<ColorDot> colorDots = new ArrayList<>();
@@ -100,11 +101,10 @@ public class MainActivity extends Activity {
         top.setGravity(Gravity.CENTER_VERTICAL);
         int p = (int) dp(4);
         top.setPadding(p, p, p, p);
-        IconButton openBtn = topButton(top, IconButton.I_OPEN, "Öffnen");
+        openBtn = topButton(top, IconButton.I_OPEN, "Öffnen");
         undoBtn = topButton(top, IconButton.I_UNDO, "Zurück");
         clearBtn = topButton(top, IconButton.I_TRASH, "Löschen");
-        View spacer = new View(this);
-        top.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        cropBtn = topButton(top, IconButton.I_CROP, "Zuschnitt");
         shareBtn = topButton(top, IconButton.I_SHARE, "Teilen");
         saveBtn = topButton(top, IconButton.I_SAVE, "Speichern");
         saveBtn.setPrimary(true);
@@ -117,6 +117,7 @@ public class MainActivity extends Activity {
 
         // ---- bottom toolbar ----
         LinearLayout bottom = new LinearLayout(this);
+        toolsPanel = bottom;
         bottom.setOrientation(LinearLayout.VERTICAL);
         bottom.setBackgroundColor(BAR);
         bottom.setPadding(p, p, p, p * 2);
@@ -191,6 +192,48 @@ public class MainActivity extends Activity {
         bottom.addView(secondRow);
         root.addView(bottom, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
+        // ---- crop bar, in place of the tools while cropping ----
+        cropPanel = new LinearLayout(this);
+        cropPanel.setOrientation(LinearLayout.VERTICAL);
+        cropPanel.setBackgroundColor(BAR);
+        cropPanel.setPadding(p, p * 2, p, p * 2);
+        android.widget.TextView cropHint = new android.widget.TextView(this);
+        cropHint.setText("Ecken und Kanten ziehen, oder den Rahmen verschieben");
+        cropHint.setTextColor(MUTED);
+        cropHint.setTextSize(13);
+        cropHint.setGravity(Gravity.CENTER);
+        cropPanel.addView(cropHint, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout cropRow = new LinearLayout(this);
+        IconButton cancelCrop = cropButton(cropRow, IconButton.I_CLOSE, "Abbrechen");
+        IconButton fullCrop = cropButton(cropRow, IconButton.I_FULL, "Alles");
+        IconButton autoCrop = cropButton(cropRow, IconButton.I_AUTO, "Auto");
+        snapBtn = cropButton(cropRow, IconButton.I_MAGNET, "Einrasten");
+        IconButton applyCrop = cropButton(cropRow, IconButton.I_CHECK, "Fertig");
+        applyCrop.setPrimary(true);
+        cropPanel.addView(cropRow);
+        cropPanel.setVisibility(View.GONE);
+        root.addView(cropPanel, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        cropBtn.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.startCrop(); } });
+        cancelCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.cancelCrop(); } });
+        fullCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.resetCrop(); } });
+        autoCrop.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (!draw.autoCrop()) Toast.makeText(MainActivity.this, "Keinen einfarbigen Rand gefunden", Toast.LENGTH_SHORT).show();
+            }
+        });
+        snapBtn.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                draw.snapEnabled = !draw.snapEnabled;
+                prefs.edit().putBoolean("snap", draw.snapEnabled).apply();
+                snapBtn.setSelectedState(draw.snapEnabled);
+                Toast.makeText(MainActivity.this, draw.snapEnabled ? "Kanten rasten an Linien im Bild ein" : "Einrasten aus", Toast.LENGTH_SHORT).show();
+            }
+        });
+        applyCrop.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { draw.applyCrop(); } });
+        draw.snapEnabled = prefs.getBoolean("snap", true);
+        snapBtn.setSelectedState(draw.snapEnabled);
+
         setContentView(root);
 
         // ---- actions ----
@@ -236,7 +279,7 @@ public class MainActivity extends Activity {
 
     IconButton topButton(LinearLayout bar, int icon, String label) {
         IconButton b = new IconButton(this, icon, label);
-        bar.addView(b, new LinearLayout.LayoutParams((int) dp(66), (int) dp(54)));
+        bar.addView(b, new LinearLayout.LayoutParams(0, (int) dp(54), 1f));
         return b;
     }
 
@@ -364,10 +407,28 @@ public class MainActivity extends Activity {
 
     void updateButtons() {
         boolean has = draw.hasImage();
-        undoBtn.setEnabled(draw.canUndo());
-        clearBtn.setEnabled(draw.hasShapes());
-        saveBtn.setEnabled(has && !busy);
-        shareBtn.setEnabled(has && !busy);
+        boolean crop = draw.cropping;
+        openBtn.setEnabled(!crop);
+        undoBtn.setEnabled(!crop && draw.canUndo());
+        clearBtn.setEnabled(!crop && draw.hasShapes());
+        cropBtn.setEnabled(has && !crop);
+        saveBtn.setEnabled(has && !busy && !crop);
+        shareBtn.setEnabled(has && !busy && !crop);
+        toolsPanel.setVisibility(crop ? View.GONE : View.VISIBLE);
+        cropPanel.setVisibility(crop ? View.VISIBLE : View.GONE);
+    }
+
+    IconButton cropButton(LinearLayout row, int icon, String label) {
+        IconButton b = new IconButton(this, icon, label);
+        row.addView(b, new LinearLayout.LayoutParams(0, (int) dp(56), 1f));
+        return b;
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        if (draw.cropping) { draw.cancelCrop(); return; }
+        super.onBackPressed();
     }
 
     // ---- loading ----
